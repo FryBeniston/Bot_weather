@@ -1,6 +1,13 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const fetch = require('node-fetch');
+const https = require('https');
+const tls = require('tls');
+
+// Явно настраиваем TLS 1.2 для стабильности на Windows
+const agent = new https.Agent({
+  secureOptions: tls.constants.SSL_OP_NO_TLSv1 | tls.constants.SSL_OP_NO_TLSv1_1
+});
 
 const token = process.env.TELEGRAM_TOKEN;
 const weatherKey = process.env.OPENWEATHER_API_KEY;
@@ -27,109 +34,35 @@ function transliterate(str) {
   return str.split('').map(c => map[c] || c).join('');
 }
 
-// Отправка сообщения с клавиатурой
-bot.onText(/\/start/, (msg) => {
-  const opts = {
-    reply_markup: {
-      keyboard: [
-        [{ text: "📍 Отправить геопозицию", request_location: true }]
-      ],
-      resize_keyboard: true,
-      one_time_keyboard: true
-    }
+// Эмодзи по погоде
+function getWeatherEmoji(main) {
+  const map = {
+    'Clear': '☀️',
+    'Clouds': '☁️',
+    'Rain': '🌧️',
+    'Drizzle': '🌦️',
+    'Thunderstorm': '⛈️',
+    'Snow': '❄️',
+    'Mist': '🌫️',
+    'Smoke': '🌫️',
+    'Haze': '🌫️',
+    'Fog': '🌫️',
+    'Dust': '🌫️',
+    'Sand': '🌫️',
+    'Ash': '🌫️',
+    'Squall': '💨',
+    'Tornado': '🌪️'
   };
-  bot.sendMessage(
-    msg.chat.id,
-    '🌤 Привет! Напиши название города или нажми кнопку, чтобы отправить геопозицию.',
-    opts
-  );
-});
+  return map[main] || '🌤';
+}
 
-// Обработка текстовых сообщений
-bot.on('message', async (msg) => {
-  if (!msg.text || msg.text.startsWith('/')) return;
-  if (msg.location) return; // на случай, если location пришёл как часть сообщения
-
-  const chatId = msg.chat.id;
-  const cityInput = msg.text.trim();
-  console.log(`📥 Город: "${cityInput}" от ${msg.from?.id || 'unknown'}`);
-
-  let url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(cityInput)}&appid=${weatherKey}&units=metric&lang=ru`;
-
-  try {
-    let response = await fetch(url);
-    let data = await response.json();
-
-    // Если город не найден — пробуем транслитерировать
-    if (data.cod === '404') {
-      const latinCity = transliterate(cityInput);
-      console.log(`🔁 Транслитерация: "${cityInput}" → "${latinCity}"`);
-      url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(latinCity)}&appid=${weatherKey}&units=metric&lang=ru`;
-      response = await fetch(url);
-      data = await response.json();
-    }
-
-    if (data.cod !== 200) {
-      throw new Error(data.message || 'Город не найден');
-    }
-
-    sendWeatherResponse(chatId, data);
-  } catch (err) {
-    console.error('❌ Ошибка при обработке текста:', err.message);
-    bot.sendMessage(chatId, '❌ Не удалось найти погоду. Попробуй уточнить название города.');
-  }
-});
-
-// Обработка геопозиции
-bot.on('location', async (msg) => {
-  const { latitude: lat, longitude: lon } = msg.location;
-  const chatId = msg.chat.id;
-  console.log(`📍 Координаты: ${lat}, ${lon} от ${msg.from?.id || 'unknown'}`);
-
-  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${weatherKey}&units=metric&lang=ru`;
-
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.cod !== 200) {
-      throw new Error('Не удалось получить погоду по координатам');
-    }
-
-    sendWeatherResponse(chatId, data);
-  } catch (err) {
-    console.error('❌ Ошибка при обработке геопозиции:', err.message);
-    bot.sendMessage(chatId, '❌ Не удалось определить погоду по вашему местоположению.');
-  }
-});
-
-// Формирование и отправка ответа с эмодзи и "человечным" стилем
+// Отправка ответа
 function sendWeatherResponse(chatId, data) {
   const { name, main, weather } = data;
   const { temp, feels_like, humidity, pressure } = main;
-  const weatherMain = weather[0].main.toLowerCase();
-
-  const emojiMap = {
-    'clear': '☀️',
-    'clouds': '☁️',
-    'rain': '🌧️',
-    'drizzle': '🌦️',
-    'thunderstorm': '⛈️',
-    'snow': '❄️',
-    'mist': '🌫️',
-    'smoke': '🌫️',
-    'haze': '🌫️',
-    'fog': '🌫️',
-    'dust': '🌫️',
-    'sand': '🌫️',
-    'ash': '🌫️',
-    'squall': '💨',
-    'tornado': '🌪️'
-  };
-
-  const emoji = emojiMap[weatherMain] || '🌤';
-  const pressureMmHg = Math.round(pressure * 0.75);
   const desc = weather[0].description.charAt(0).toUpperCase() + weather[0].description.slice(1);
+  const emoji = getWeatherEmoji(weather[0].main);
+  const pressureMmHg = Math.round(pressure * 0.75);
 
   const reply = `
 ${emoji} Сейчас в ${name}:
@@ -139,10 +72,70 @@ ${emoji} Сейчас в ${name}:
 🔽 Давление: ${pressureMmHg} мм рт.ст.
   `.trim();
 
-  bot.sendMessage(chatId, reply);
+  bot.sendMessage(chatId, reply).catch(err => console.error('Ошибка отправки:', err.message));
 }
 
-// Обработка ошибок polling
+// /start
+bot.onText(/\/start/, (msg) => {
+  const opts = {
+    reply_markup: {
+      keyboard: [[{ text: "📍 Отправить геопозицию", request_location: true }]],
+      resize_keyboard: true,
+      one_time_keyboard: true
+    }
+  };
+  bot.sendMessage(msg.chat.id, '🌤 Привет! Напиши город или отправь геопозицию.', opts);
+});
+
+// Обработка текста
+bot.on('message', async (msg) => {
+  if (!msg.text || msg.text.startsWith('/') || msg.location) return;
+
+  const chatId = msg.chat.id;
+  const cityInput = msg.text.trim();
+  console.log(`📥 Город: "${cityInput}" от ${msg.from?.id}`);
+
+  let url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(cityInput)}&appid=${weatherKey}&units=metric&lang=ru`;
+
+  try {
+    let response = await fetch(url, { agent });
+    let data = await response.json();
+
+    if (data.cod === '404') {
+      const latinCity = transliterate(cityInput);
+      console.log(`🔁 Транслитерация: "${cityInput}" → "${latinCity}"`);
+      url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(latinCity)}&appid=${weatherKey}&units=metric&lang=ru`;
+      response = await fetch(url, { agent });
+      data = await response.json();
+    }
+
+    if (data.cod !== 200) throw new Error(data.message || 'Город не найден');
+    sendWeatherResponse(chatId, data);
+  } catch (err) {
+    console.error('❌ Ошибка текста:', err.message);
+    bot.sendMessage(chatId, '❌ Не удалось найти погоду. Попробуй уточнить название.');
+  }
+});
+
+// Обработка геопозиции
+bot.on('location', async (msg) => {
+  const { latitude: lat, longitude: lon } = msg.location;
+  const chatId = msg.chat.id;
+  console.log(`📍 Координаты: ${lat}, ${lon} от ${msg.from?.id}`);
+
+  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${weatherKey}&units=metric&lang=ru`;
+
+  try {
+    const response = await fetch(url, { agent });
+    const data = await response.json();
+    if (data.cod !== 200) throw new Error('Не удалось получить погоду по координатам');
+    sendWeatherResponse(chatId, data);
+  } catch (err) {
+    console.error('❌ Ошибка геопозиции:', err.message);
+    bot.sendMessage(chatId, '❌ Не удалось определить погоду по вашему местоположению.');
+  }
+});
+
 bot.on('polling_error', (err) => {
   console.error('📡 Polling error:', err.code, err.message);
 });
