@@ -1,3 +1,5 @@
+// src/utils/formatWeather.js
+
 function getWeatherEmoji(main) {
   const map = {
     'Clear': '☀️',
@@ -8,7 +10,7 @@ function getWeatherEmoji(main) {
     'Snow': '❄️',
     'Mist': '🌫️',
     'Smoke': '🌫️',
-    'Haze': '雾霾',
+    'Haze': '🌫️',
     'Fog': '🌫️',
     'Dust': '🌫️',
     'Sand': '🌫️',
@@ -24,7 +26,7 @@ function formatWeatherResponse(data) {
   const { temp, feels_like, humidity, pressure } = main;
   const desc = weather[0].description.charAt(0).toUpperCase() + weather[0].description.slice(1);
   const emoji = getWeatherEmoji(weather[0].main);
-  const pressureMmHg = Math.round(pressure * 0.75);
+  const pressureMmHg = pressure ? Math.round(pressure * 0.75) : '—';
 
   return `
 ${emoji} Сейчас в ${name}:
@@ -35,4 +37,4 @@ ${emoji} Сейчас в ${name}:
   `.trim();
 }
 
-module.exports = { formatWeatherResponse };
+module.exports = { formatWeatherResponse, getWeatherEmoji };

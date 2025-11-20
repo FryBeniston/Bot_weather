@@ -10,6 +10,16 @@ function setupCommands(bot) {
       },
     });
   });
+
+  bot.command('forecast', (ctx) => {
+    ctx.reply('📆 Чтобы получить прогноз — отправь геопозицию.', {
+      reply_markup: {
+        keyboard: [[{ text: '📍 Отправить геопозицию', request_location: true }]],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      },
+    });
+  });
 }
 
 module.exports = { setupCommands };
