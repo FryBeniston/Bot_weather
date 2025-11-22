@@ -1,4 +1,3 @@
-// bot.js
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const { setupCommands } = require('./src/bot/commands');
@@ -21,6 +20,28 @@ bot.catch((err) => {
   console.error('⚠️ Telegraf error:', err);
 });
 
-bot.launch();
+// === Webhook setup для Render ===
+const PORT = process.env.PORT || 3000;
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL; // вида https://your-bot.onrender.com
+
+if (!RENDER_EXTERNAL_URL) {
+  console.warn('⚠️ RENDER_EXTERNAL_URL не задан. Убедитесь, что он установлен в Render dashboard.');
+}
+
+const webhookDomain = RENDER_EXTERNAL_URL
+  ? RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '') // убираем протокол, оставляем только хост
+  : undefined;
+
+bot.launch({
+  webhook: {
+    domain: webhookDomain,
+    port: PORT
+  }
+});
+
+console.log(`🚀 Bot запущен в webhook-режиме на порту ${PORT}`);
+console.log(`🌐 Webhook domain: ${webhookDomain}`);
+
+// Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
