@@ -5,14 +5,17 @@ const express = require('express');
 
 const { setupCommands } = require('./src/bot/commands');
 const { handleTextMessage, handleLocation, handleForecastCallback } = require('./src/bot/handlers');
-
 const { getWeatherByCity } = require('./src/services/weatherService');
 const { formatWeatherResponse } = require('./src/utils/formatWeather');
 const { getAllSubscribers } = require('./src/utils/userStorage');
+const path = require('path');
+const fs = require('fs');
 
 const token = process.env.TELEGRAM_TOKEN;
-if (!token) {
-  console.error('❌ TELEGRAM_TOKEN не задан в .env');
+const openWeatherKey = process.env.OPENWEATHER_API_KEY;
+
+if (!token || !openWeatherKey) {
+  console.error('❌ Отсутствуют TELEGRAM_TOKEN или OPENWEATHER_API_KEY в .env');
   process.exit(1);
 }
 
@@ -27,33 +30,42 @@ bot.catch((err) => {
   console.error('⚠️ Telegraf error:', err);
 });
 
-// === Настройка Express для обработки webhook и trigger-daily ===
+// === Убедимся, что userData.json существует ===
+const dbPath = path.join(__dirname, 'src/data/userData.json');
+if (!fs.existsSync(dbPath)) {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  fs.writeFileSync(dbPath, '{}');
+  console.log('✅ Создан src/data/userData.json');
+}
+
+// === Express сервер ===
 const PORT = process.env.PORT || 3000;
 const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 
 if (!RENDER_EXTERNAL_URL) {
-  console.warn('⚠️ RENDER_EXTERNAL_URL не задан.');
+  console.warn('⚠️ RENDER_EXTERNAL_URL не задан. Вебхук не будет установлен.');
 }
-
-const webhookDomain = RENDER_EXTERNAL_URL
-  ? RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
-  : undefined;
 
 const app = express();
 
-// Обработка вебхука Telegram
-app.use(bot.webhookCallback('/webhook'));
+// Простой health-check эндпоинт (для диагностики)
+app.get('/', (req, res) => {
+  res.json({ status: 'OK', time: new Date().toISOString() });
+});
 
-// Эндпоинт для внешнего триггера
+// Вебхук Telegram
+app.use('/webhook', bot.webhookCallback('/webhook'));
+
+// Эндпоинт для рассылки
 app.get('/trigger-daily', async (req, res) => {
   console.log('⏰ Запущена ежедневная рассылка...');
-
+  
   const subscribers = getAllSubscribers();
   let sentCount = 0;
 
   for (const { id, city } of subscribers) {
     try {
-      const data = await getWeatherByCity(city, process.env.OPENWEATHER_API_KEY);
+      const data = await getWeatherByCity(city, openWeatherKey);
       const text = `📆 Ежедневная погода:\n\n${formatWeatherResponse(data)}`;
       await bot.telegram.sendMessage(id, text);
       sentCount++;
@@ -62,18 +74,20 @@ app.get('/trigger-daily', async (req, res) => {
     }
   }
 
-  res.status(200).json({ success: true, sent: sentCount });
+  res.status(200).json({ success: true, sent: sentCount, time: new Date().toISOString() });
 });
 
-// Установка вебхука Telegram
-bot.telegram.setWebhook(`${RENDER_EXTERNAL_URL}/webhook`).catch(console.error);
-
-// Запуск Express-сервера
-app.listen(PORT, () => {
-  console.log(`🚀 Bot запущен на порту ${PORT}`);
-  console.log(`🌐 Webhook domain: ${webhookDomain}`);
-  console.log(`🔗 Вебхук: ${RENDER_EXTERNAL_URL}/webhook`);
+// Запуск сервера
+app.listen(PORT, async () => {
+  console.log(`🚀 Сервер запущен на порту ${PORT}`);
+  
+  if (RENDER_EXTERNAL_URL) {
+    const webhookUrl = `${RENDER_EXTERNAL_URL}/webhook`;
+    try {
+      await bot.telegram.setWebhook(webhookUrl);
+      console.log(`✅ Вебхук установлен: ${webhookUrl}`);
+    } catch (err) {
+      console.error('❌ Не удалось установить вебхук:', err.message);
+    }
+  }
 });
-
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
