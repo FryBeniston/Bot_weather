@@ -27,30 +27,24 @@ bot.catch((err) => {
   console.error('⚠️ Telegraf error:', err);
 });
 
-// === Webhook setup для Render ===
+// === Настройка Express для обработки webhook и trigger-daily ===
 const PORT = process.env.PORT || 3000;
 const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 
 if (!RENDER_EXTERNAL_URL) {
   console.warn('⚠️ RENDER_EXTERNAL_URL не задан.');
 }
-console.log(`📌 Используется порт: ${PORT}`);
+
 const webhookDomain = RENDER_EXTERNAL_URL
   ? RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
   : undefined;
 
-bot.launch({
-  webhook: {
-    domain: webhookDomain,
-    port: PORT
-  }
-});
-
-// Создаём Express-приложение для обработки /trigger-daily
 const app = express();
 
-app.use(express.json());
+// Обработка вебхука Telegram
+app.use(bot.webhookCallback('/webhook'));
 
+// Эндпоинт для внешнего триггера
 app.get('/trigger-daily', async (req, res) => {
   console.log('⏰ Запущена ежедневная рассылка...');
 
@@ -71,13 +65,15 @@ app.get('/trigger-daily', async (req, res) => {
   res.status(200).json({ success: true, sent: sentCount });
 });
 
-// Запускаем Express-сервер на том же порту, что и Telegraf
-app.listen(PORT, () => {
-  console.log(`🌐 API сервер запущен на порту ${PORT}`);
-});
+// Установка вебхука Telegram
+bot.telegram.setWebhook(`${RENDER_EXTERNAL_URL}/webhook`).catch(console.error);
 
-console.log(`🚀 Bot запущен в webhook-режиме`);
-console.log(`🔗 Webhook domain: ${webhookDomain}`);
+// Запуск Express-сервера
+app.listen(PORT, () => {
+  console.log(`🚀 Bot запущен на порту ${PORT}`);
+  console.log(`🌐 Webhook domain: ${webhookDomain}`);
+  console.log(`🔗 Вебхук: ${RENDER_EXTERNAL_URL}/webhook`);
+});
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
