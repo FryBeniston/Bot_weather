@@ -2,20 +2,19 @@
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const express = require('express');
-const path = require('path');
 const fs = require('fs');
 
-// === Проверка ключей ===
+// === Проверка переменных окружения ===
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 
 if (!TELEGRAM_TOKEN || !OPENWEATHER_API_KEY) {
-  console.error('❌ Отсутствуют TELEGRAM_TOKEN или OPENWEATHER_API_KEY в .env');
+  console.error('❌ Отсутствуют TELEGRAM_TOKEN или OPENWEATHER_API_KEY');
   process.exit(1);
 }
 
-// === Убедимся, что userData.json существует в корне ===
+// === Создаём файл базы данных в /tmp (единственное разрешённое место) ===
 const DB_PATH = '/tmp/userData.json';
 if (!fs.existsSync(DB_PATH)) {
   fs.writeFileSync(DB_PATH, '{}');
@@ -25,7 +24,7 @@ if (!fs.existsSync(DB_PATH)) {
 // === Инициализация бота ===
 const bot = new Telegraf(TELEGRAM_TOKEN);
 
-// === Импорт обработчиков ===
+// === Подключаем обработчики ===
 const { setupCommands } = require('./src/bot/commands');
 const { handleTextMessage, handleLocation, handleForecastCallback } = require('./src/bot/handlers');
 
@@ -42,13 +41,18 @@ bot.catch((err) => {
 const PORT = process.env.PORT || 3000;
 const app = express();
 
+// Парсим JSON (Telegram отправляет application/json)
+app.use(express.json());
+
 // Health-check
 app.get('/', (req, res) => {
   res.json({ status: 'OK', time: new Date().toISOString() });
 });
 
-// Telegram webhook
-app.use('/webhook', bot.webhookCallback('/webhook'));
+// Telegram вебхук (POST)
+app.post('/webhook', (req, res) => {
+  bot.handleUpdate(req.body, res);
+});
 
 // Эндпоинт для ежедневной рассылки
 app.get('/trigger-daily', async (req, res) => {
@@ -76,18 +80,13 @@ app.get('/trigger-daily', async (req, res) => {
 });
 
 // === Запуск сервера ===
-app.listen(PORT, async () => {
-  console.log(`🚀 Express сервер запущен на порту ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`🚀 Сервер запущен на порту ${PORT}`);
 
   if (RENDER_EXTERNAL_URL) {
     const webhookUrl = `${RENDER_EXTERNAL_URL}/webhook`;
-    try {
-      await bot.telegram.setWebhook(webhookUrl);
-      console.log(`✅ Вебхук установлен: ${webhookUrl}`);
-    } catch (err) {
-      console.error('❌ Не удалось установить вебхук:', err.message);
-    }
-  } else {
-    console.warn('⚠️ RENDER_EXTERNAL_URL не задан — вебхук не установлен');
+    bot.telegram.setWebhook(webhookUrl)
+      .then(() => console.log(`✅ Вебхук установлен: ${webhookUrl}`))
+      .catch(err => console.error('❌ Ошибка установки вебхука:', err.message));
   }
 });
