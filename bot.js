@@ -16,15 +16,10 @@ if (!TELEGRAM_TOKEN || !OPENWEATHER_API_KEY) {
 }
 
 // === Убедимся, что userData.json существует в корне ===
-const DB_PATH = path.join(__dirname, 'userData.json');
+const DB_PATH = '/tmp/userData.json';
 if (!fs.existsSync(DB_PATH)) {
-  try {
-    fs.writeFileSync(DB_PATH, '{}');
-    console.log('✅ Создан userData.json в корне проекта');
-  } catch (err) {
-    console.error('❌ Не удалось создать userData.json:', err.message);
-    process.exit(1);
-  }
+  fs.writeFileSync(DB_PATH, '{}');
+  console.log('✅ Создан /tmp/userData.json');
 }
 
 // === Инициализация бота ===

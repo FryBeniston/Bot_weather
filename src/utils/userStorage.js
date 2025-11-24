@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '../../userData.json');
+const DB_PATH = '/tmp/userData.json';
 
 function readDB() {
   try {
