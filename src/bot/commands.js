@@ -1,5 +1,4 @@
-// src/bot/commands.js
-const { getHomeCity, setHomeCity } = require('../utils/homeCity');
+const { getHomeCity, setHomeCity, setDailyTime } = require('../utils/userStorage');
 const { getWeatherByCity } = require('../services/weatherService');
 const { formatWeatherResponse } = require('../utils/formatWeather');
 const { logEvent } = require('../utils/logger');
@@ -8,7 +7,8 @@ function setupCommands(bot) {
   bot.start((ctx) => {
     ctx.reply('🌤 Привет! Выбери город, отправь геопозицию или используй команды:\n\n'
       + '• /sethome [город] — сохранить город\n'
-      + '• /home — погода в сохранённом городе', {
+      + '• /home — погода в сохранённом городе\n'
+      + '• /daily HH:mm — ежедневная рассылка (UTC)', {
       reply_markup: {
         keyboard: [
           ['Москва', 'Санкт-Петербург'],
@@ -56,12 +56,31 @@ function setupCommands(bot) {
       await ctx.reply(text);
     } catch (err) {
       logEvent(`❌ Ошибка /home для ${ctx.from.id}: ${err.message}`);
-      await ctx.reply('❌ Не удалось загрузить погоду. Возможно, город устарел — обновите через /sethome.');
+      await ctx.reply('❌ Не удалось загрузить погоду.');
     }
   });
 
-  bot.command('forecast', (ctx) => {
-    ctx.reply('📆 Чтобы получить прогноз — отправь геопозицию или введи город.');
+  bot.command('daily', async (ctx) => {
+    const args = ctx.message.text.split(' ').slice(1).join(' ').trim();
+    const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+
+    if (!args || !timeRegex.test(args)) {
+      return ctx.reply('UsageId: /daily 8:00 или /daily 19:30\n(время в UTC)');
+    }
+
+    const city = getHomeCity(ctx.from.id);
+    if (!city) {
+      return ctx.reply('❌ Сначала установите город: /sethome [город]');
+    }
+
+    const [h, m] = args.split(':').map(part => part.padStart(2, '0'));
+    const formattedTime = `${h}:${m}`;
+
+    setDailyTime(ctx.from.id, formattedTime);
+    await ctx.reply(
+      `✅ Ежедневная рассылка в ${formattedTime} UTC включена для "${city}"!\n` +
+      `Для МСК (UTC+3) укажите время на 3 часа меньше.`
+    );
   });
 }
 

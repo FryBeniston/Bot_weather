@@ -3,6 +3,10 @@ const { Telegraf } = require('telegraf');
 const { setupCommands } = require('./src/bot/commands');
 const { handleTextMessage, handleLocation, handleForecastCallback } = require('./src/bot/handlers');
 
+const { getWeatherByCity } = require('./src/services/weatherService');
+const { formatWeatherResponse } = require('./src/utils/formatWeather');
+const { getAllSubscribers } = require('./src/utils/userStorage');
+
 const token = process.env.TELEGRAM_TOKEN;
 if (!token) {
   console.error('❌ TELEGRAM_TOKEN не задан в .env');
@@ -22,14 +26,14 @@ bot.catch((err) => {
 
 // === Webhook setup для Render ===
 const PORT = process.env.PORT || 3000;
-const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL; // вида https://your-bot.onrender.com
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 
 if (!RENDER_EXTERNAL_URL) {
-  console.warn('⚠️ RENDER_EXTERNAL_URL не задан. Убедитесь, что он установлен в Render dashboard.');
+  console.warn('⚠️ RENDER_EXTERNAL_URL не задан.');
 }
 
 const webhookDomain = RENDER_EXTERNAL_URL
-  ? RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '') // убираем протокол, оставляем только хост
+  ? RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
   : undefined;
 
 bot.launch({
@@ -39,9 +43,29 @@ bot.launch({
   }
 });
 
+// Эндпоинт для внешнего триггера рассылки
+bot.telegram.webhookCallback('/trigger-daily', async (req, res) => {
+  console.log('⏰ Запущена ежедневная рассылка...');
+
+  const subscribers = getAllSubscribers();
+  let sentCount = 0;
+
+  for (const { id, city } of subscribers) {
+    try {
+      const data = await getWeatherByCity(city, process.env.OPENWEATHER_API_KEY);
+      const text = `📆 Ежедневная погода:\n\n${formatWeatherResponse(data)}`;
+      await bot.telegram.sendMessage(id, text);
+      sentCount++;
+    } catch (err) {
+      console.error(`❌ Ошибка отправки пользователю ${id}:`, err.message);
+    }
+  }
+
+  res.status(200).json({ success: true, sent: sentCount });
+});
+
 console.log(`🚀 Bot запущен в webhook-режиме на порту ${PORT}`);
 console.log(`🌐 Webhook domain: ${webhookDomain}`);
 
-// Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

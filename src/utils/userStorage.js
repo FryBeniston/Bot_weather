@@ -1,4 +1,3 @@
-// src/utils/userStorage.js
 const fs = require('fs');
 const path = require('path');
 
@@ -25,7 +24,6 @@ function writeDB(data) {
   }
 }
 
-// Сохранить город
 function setHomeCity(userId, city) {
   const db = readDB();
   if (!db[userId]) db[userId] = {};
@@ -33,13 +31,11 @@ function setHomeCity(userId, city) {
   writeDB(db);
 }
 
-// Получить город
 function getHomeCity(userId) {
   const db = readDB();
   return db[userId]?.homeCity || null;
 }
 
-// Сохранить время рассылки
 function setDailyTime(userId, time) {
   const db = readDB();
   if (!db[userId]) db[userId] = {};
@@ -47,12 +43,11 @@ function setDailyTime(userId, time) {
   writeDB(db);
 }
 
-// Получить всех пользователей с активной рассылкой
 function getAllSubscribers() {
   const db = readDB();
   const now = new Date();
-  const currentHour = String(now.getHours()).padStart(2, '0');
-  const currentMinute = String(now.getMinutes()).padStart(2, '0');
+  const currentHour = String(now.getUTCHours()).padStart(2, '0');
+  const currentMinute = String(now.getUTCMinutes()).padStart(2, '0');
   const currentTime = `${currentHour}:${currentMinute}`;
 
   return Object.entries(db)
@@ -62,7 +57,7 @@ function getAllSubscribers() {
       city: user.homeCity,
       time: user.dailyTime
     }))
-    .filter(user => user.time === currentTime); // отправляем ТОЛЬКО тем, у кого совпадает время
+    .filter(user => user.time === currentTime);
 }
 
 module.exports = {
