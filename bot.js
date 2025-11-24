@@ -34,7 +34,7 @@ const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
 if (!RENDER_EXTERNAL_URL) {
   console.warn('⚠️ RENDER_EXTERNAL_URL не задан.');
 }
-
+console.log(`📌 Используется порт: ${PORT}`);
 const webhookDomain = RENDER_EXTERNAL_URL
   ? RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
   : undefined;
