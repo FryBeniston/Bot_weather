@@ -1,5 +1,8 @@
+// bot.js
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
+const express = require('express');
+
 const { setupCommands } = require('./src/bot/commands');
 const { handleTextMessage, handleLocation, handleForecastCallback } = require('./src/bot/handlers');
 
@@ -43,8 +46,12 @@ bot.launch({
   }
 });
 
-// Эндпоинт для внешнего триггера рассылки
-bot.telegram.webhookCallback('/trigger-daily', async (req, res) => {
+// Создаём Express-приложение для обработки /trigger-daily
+const app = express();
+
+app.use(express.json());
+
+app.get('/trigger-daily', async (req, res) => {
   console.log('⏰ Запущена ежедневная рассылка...');
 
   const subscribers = getAllSubscribers();
@@ -64,8 +71,13 @@ bot.telegram.webhookCallback('/trigger-daily', async (req, res) => {
   res.status(200).json({ success: true, sent: sentCount });
 });
 
-console.log(`🚀 Bot запущен в webhook-режиме на порту ${PORT}`);
-console.log(`🌐 Webhook domain: ${webhookDomain}`);
+// Запускаем Express-сервер
+app.listen(PORT, () => {
+  console.log(`🌐 API сервер запущен на порту ${PORT}`);
+});
+
+console.log(`🚀 Bot запущен в webhook-режиме`);
+console.log(`🔗 Webhook domain: ${webhookDomain}`);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
