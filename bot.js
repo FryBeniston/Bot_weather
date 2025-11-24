@@ -71,7 +71,7 @@ app.get('/trigger-daily', async (req, res) => {
   res.status(200).json({ success: true, sent: sentCount });
 });
 
-// Запускаем Express-сервер
+// Запускаем Express-сервер на том же порту, что и Telegraf
 app.listen(PORT, () => {
   console.log(`🌐 API сервер запущен на порту ${PORT}`);
 });
