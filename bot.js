@@ -1,7 +1,7 @@
 // bot.js
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
-const { LocalSession } = require('telegraf-session-local'); // ✅ правильно
+const LocalSession = require('telegraf-session-local'); 
 const express = require('express');
 const fs = require('fs');
 const os = require('os');
