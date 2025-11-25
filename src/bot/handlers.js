@@ -9,11 +9,27 @@ const { formatWeatherResponse } = require('../utils/formatWeather');
 const { formatForecastResponse } = require('../utils/formatForecast');
 const { logEvent } = require('../utils/logger');
 
-// Обработка текстового ввода города
 async function handleTextMessage(ctx) {
   const msg = ctx.message;
-  if (!msg.text || msg.text.startsWith('/')) return;
+  if (!msg || !msg.text || msg.text.startsWith('/')) return; // ← игнорируем команды
 
+  // Обработка ввода города после /sethome
+  if (ctx.session?.awaitingHomeCity) {
+    const city = msg.text.trim();
+    if (!city) return ctx.reply('❌ Название не может быть пустым.');
+
+    try {
+      const data = await getWeatherByCity(city, process.env.OPENWEATHER_API_KEY);
+      if (!data.name) throw new Error('Город не найден');
+      require('../utils/userStorage').setHomeCity(ctx.from.id, data.name);
+      delete ctx.session.awaitingHomeCity;
+      return ctx.reply(`✅ Город "${data.name}" сохранён как домашний!`);
+    } catch (err) {
+      return ctx.reply('❌ Не удалось найти город. Попробуйте точное название.');
+    }
+  }
+
+  // Обычный запрос погоды
   const city = msg.text.trim();
   if (!city) return;
 
@@ -40,7 +56,6 @@ async function handleTextMessage(ctx) {
   }
 }
 
-// Обработка геопозиции
 async function handleLocation(ctx) {
   const msg = ctx.message;
   if (!msg.location) return;
@@ -65,31 +80,26 @@ async function handleLocation(ctx) {
   }
 }
 
-// Обработка нажатия на кнопку прогноза
 async function handleForecastCallback(ctx) {
   try {
-    // Исправляем получение данных из callback_query
-    const callbackData = ctx.callbackQuery.data;
-    const matches = callbackData.match(/forecast_([-0-9.]+)_([-0-9.]+)/);
-    
-    if (!matches) {
-      throw new Error('Некорректные данные callback');
+    const callbackData = ctx.callbackQuery?.data;
+    if (!callbackData || !callbackData.startsWith('forecast_')) {
+      return ctx.answerCbQuery('❌ Недопустимый запрос', true);
     }
 
-    const lat = parseFloat(matches[1]);
-    const lon = parseFloat(matches[2]);
-    
+    const [_, latStr, lonStr] = callbackData.split('_');
+    const lat = parseFloat(latStr);
+    const lon = parseFloat(lonStr);
+
     if (isNaN(lat) || isNaN(lon)) {
       throw new Error('Некорректные координаты');
     }
 
-    // Показываем уведомление о загрузке
     await ctx.answerCbQuery('📥 Загружаем прогноз...');
 
     const forecast = await getWeatherForecastByCoords(lat, lon, process.env.OPENWEATHER_API_KEY);
     const text = formatForecastResponse(forecast);
 
-    // Редактируем сообщение, убираем кнопку
     await ctx.editMessageText(text, {
       reply_markup: { inline_keyboard: [] }
     });

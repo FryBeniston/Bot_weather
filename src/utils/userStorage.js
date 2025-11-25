@@ -7,13 +7,10 @@ const DB_PATH = path.join(os.tmpdir(), 'userData.json');
 
 function readDB() {
   try {
-    if (!fs.existsSync(DB_PATH)) {
-      fs.writeFileSync(DB_PATH, '{}');
-    }
-    const data = fs.readFileSync(DB_PATH, 'utf8');
-    return JSON.parse(data || '{}');
+    if (!fs.existsSync(DB_PATH)) fs.writeFileSync(DB_PATH, '{}');
+    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8') || '{}');
   } catch (err) {
-    console.error('❌ Ошибка чтения userData.json:', err.message);
+    console.error('❌ Ошибка чтения БД:', err.message);
     return {};
   }
 }
@@ -22,7 +19,7 @@ function writeDB(data) {
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
   } catch (err) {
-    console.error('❌ Ошибка записи userData.json:', err.message);
+    console.error('❌ Ошибка записи БД:', err.message);
   }
 }
 
@@ -55,17 +52,8 @@ function getAllSubscribers() {
 
   return Object.entries(db)
     .filter(([id, user]) => user.dailyUtcTime && user.homeCity)
-    .map(([id, user]) => ({
-      id,
-      city: user.homeCity,
-      time: user.dailyUtcTime
-    }))
+    .map(([id, user]) => ({ id, city: user.homeCity, time: user.dailyUtcTime }))
     .filter(user => user.time === currentTime);
 }
 
-module.exports = {
-  setHomeCity,
-  getHomeCity,
-  setDailyTimeWithTZ,
-  getAllSubscribers
-};
+module.exports = { setHomeCity, getHomeCity, setDailyTimeWithTZ, getAllSubscribers };

@@ -1,7 +1,7 @@
 // bot.js
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
-const LocalSession = require('telegraf-session-local'); 
+const LocalSession = require('telegraf-session-local');
 const express = require('express');
 const fs = require('fs');
 const os = require('os');
@@ -16,7 +16,6 @@ if (!TELEGRAM_TOKEN || !OPENWEATHER_API_KEY) {
   process.exit(1);
 }
 
-// Кроссплатформенный путь к файлам
 const DB_PATH = path.join(os.tmpdir(), 'userData.json');
 const SESSION_PATH = path.join(os.tmpdir(), 'sessions.json');
 
@@ -26,16 +25,16 @@ if (!fs.existsSync(DB_PATH)) {
 }
 
 const bot = new Telegraf(TELEGRAM_TOKEN);
-
-// Подключаем сессии
 bot.use(new LocalSession({ database: SESSION_PATH }).middleware());
 
 // Подключаем команды
 const { setupCommands } = require('./src/bot/commands');
 setupCommands(bot);
 
-// Обработчики
-const { handleLocation, handleForecastCallback } = require('./src/bot/handlers');
+// Обработчики (в том числе текст без команд)
+const { handleTextMessage, handleLocation, handleForecastCallback } = require('./src/bot/handlers');
+
+bot.on('text', handleTextMessage); // ← игнорирует команды внутри самой функции
 bot.on('location', handleLocation);
 bot.action(/forecast_(.+?)_(.+)/, handleForecastCallback);
 
