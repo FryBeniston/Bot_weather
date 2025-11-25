@@ -1,7 +1,9 @@
 // src/utils/userStorage.js
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
-const DB_PATH = '/tmp/userData.json';
+const DB_PATH = path.join(os.tmpdir(), 'userData.json');
 
 function readDB() {
   try {
