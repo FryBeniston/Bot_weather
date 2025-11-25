@@ -1,123 +1,99 @@
 // src/services/weatherService.js
-
 const fetch = require('node-fetch');
-const { transliterate } = require('../utils/transliterate');
-const { logEvent, incrementRequest } = require('../utils/logger');
 
-const MAX_RETRIES = 3;
-const TIMEOUT_MS = 15000;
-
-async function fetchWithTimeout(url) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-    logEvent(`⏰ Таймаут запроса к: ${url.replace(/(appid=)[^&]*/gi, '$1***REDACTED***')}`);
-  }, TIMEOUT_MS);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    throw err;
-  }
+// Geocoding через Open-Meteo не поддерживается → используем Nominatim (бесплатно)
+async function geocodeCity(city) {
+  const url = `https://nominatim.openstreetmap.org/search?city=${encodeURIComponent(city)}&format=json&limit=1`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'Telegram Weather Bot (your@email.com)' }
+  });
+  const data = await res.json();
+  if (!data || data.length === 0) throw new Error('Город не найден');
+  return {
+    name: data[0].display_name.split(',')[0],
+    lat: parseFloat(data[0].lat),
+    lon: parseFloat(data[0].lon),
+    country: data[0].display_name.includes('Россия') ? 'RU' : 'OTHER'
+  };
 }
 
-async function fetchWithRetry(url, retries = MAX_RETRIES) {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      return await fetchWithTimeout(url);
-    } catch (err) {
-      logEvent(`Попытка ${i + 1}/${retries + 1} не удалась — ${err.message}`);
-      if (i === retries) throw err;
-      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
-    }
-  }
+// Текущая погода + прогноз на 1 день (для текущей погоды)
+async function getWeatherByCity(city, apiKey = null) {
+  const geo = await geocodeCity(city);
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${geo.lat}&longitude=${geo.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto`;
+  const res = await fetch(url);
+  const data = await res.json();
+
+  return {
+    name: geo.name,
+    sys: { country: geo.country },
+    main: {
+      temp: data.current.temperature_2m,
+      feels_like: data.current.apparent_temperature,
+      humidity: data.current.relative_humidity_2m,
+      temp_min: data.daily.temperature_2m_min[0],
+      temp_max: data.daily.temperature_2m_max[0]
+    },
+    weather: [{
+      description: data.current.temperature_2m > 0 ? 'Облачно' : 'Ясно' // упрощённо
+    }],
+    coord: { lat: geo.lat, lon: geo.lon },
+    timezone_offset: 0 // не используется в Open-Meteo
+  };
 }
 
-async function getWeatherByCity(city, apiKey) {
-  let url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=metric&lang=ru`;
-  let response = await fetchWithRetry(url);
-  let data = await response.json();
+// По координатам (от Telegram)
+async function getWeatherByCoords(lat, lon, apiKey = null) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min&forecast_days=1&timezone=auto`;
+  const res = await fetch(url);
+  const data = await res.json();
 
-  if (data.cod === '404') {
-    const latin = transliterate(city);
-    logEvent(`Транслитерация: "${city}" → "${latin}"`);
-    url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(latin)}&appid=${apiKey}&units=metric&lang=ru`;
-    response = await fetchWithRetry(url);
-    data = await response.json();
-  }
+  // Получаем название через обратный геокодинг (опционально)
+  const reverseUrl = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`;
+  const revRes = await fetch(reverseUrl, {
+    headers: { 'User-Agent': 'Telegram Weather Bot (your@email.com)' }
+  });
+  const revData = await revRes.json();
+  const name = revData.address?.city || revData.address?.town || 'Координаты';
 
-  if (data.cod !== 200) {
-    const err = new Error(data.message || 'Неизвестная ошибка API');
-    err.code = data.cod;
-    throw err;
-  }
-
-  if (!data.coord || typeof data.coord.lat !== 'number' || typeof data.coord.lon !== 'number') {
-    throw new Error('Ответ API не содержит координат');
-  }
-
-  incrementRequest();
-  return data;
+  return {
+    name,
+    sys: { country: 'RU' },
+    main: {
+      temp: data.current.temperature_2m,
+      feels_like: data.current.apparent_temperature,
+      humidity: data.current.relative_humidity_2m,
+      temp_min: data.daily.temperature_2m_min[0],
+      temp_max: data.daily.temperature_2m_max[0]
+    },
+    weather: [{
+      description: data.current.temperature_2m > 0 ? 'Облачно' : 'Ясно'
+    }],
+    coord: { lat, lon },
+    timezone_offset: 0
+  };
 }
 
-async function getWeatherByCoords(lat, lon, apiKey) {
-  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=ru`;
-  const response = await fetchWithRetry(url);
-  const data = await response.json();
+// Прогноз на 7 дней
+async function getWeatherForecastByCoords(lat, lon, apiKey = null) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min&forecast_days=7&timezone=auto`;
+  const res = await fetch(url);
+  const data = await res.json();
 
-  if (data.cod !== 200) {
-    const err = new Error('Погода по координатам не найдена');
-    err.code = data.cod;
-    throw err;
-  }
-
-  incrementRequest();
-  return data;
-}
-
-async function getWeatherForecastByCoords(lat, lon, apiKey) {
-  const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric&lang=ru`;
-  const response = await fetchWithRetry(url);
-  const data = await response.json();
-
-  if (data.cod !== '200') {
-    throw new Error('Прогноз по координатам не найден');
-  }
-
-  const daily = {};
-  for (const item of data.list) {
-    const dateStr = new Date(item.dt * 1000).toISOString().split('T')[0];
-    if (!daily[dateStr]) {
-      daily[dateStr] = { temps: [], descriptions: [], icons: [] };
-    }
-    daily[dateStr].temps.push(item.main.temp);
-    daily[dateStr].descriptions.push(item.weather[0].description);
-    daily[dateStr].icons.push(item.weather[0].main);
-  }
-
-  const forecast = Object.values(daily)
-    .slice(0, 5)
-    .map((dayObj, i) => {
-      const dateStr = Object.keys(daily)[i];
-      const avgTemp = dayObj.temps.reduce((a, b) => a + b, 0) / dayObj.temps.length;
-      const formattedDate = new Date(dateStr).toLocaleDateString('ru-RU', {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short'
-      });
-      return {
-        date: formattedDate,
-        temp: avgTemp,
-        desc: dayObj.descriptions[0],
-        main: dayObj.icons[0]
-      };
-    });
-
-  incrementRequest();
-  return { cityName: data.city.name, forecast };
+  return {
+    city: { name: 'Прогноз' },
+    list: data.daily.time.map((date, i) => ({
+      dt: new Date(date).getTime() / 1000,
+      temp: {
+        day: (data.daily.temperature_2m_max[i] + data.daily.temperature_2m_min[i]) / 2,
+        min: data.daily.temperature_2m_min[i],
+        max: data.daily.temperature_2m_max[i]
+      },
+      weather: [{
+        description: data.daily.temperature_2m_max[i] > 0 ? 'Облачно' : 'Ясно'
+      }]
+    }))
+  };
 }
 
 module.exports = {

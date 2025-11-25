@@ -46,7 +46,7 @@ async function handleTextMessage(ctx) {
     await ctx.reply(text, {
       reply_markup: {
         inline_keyboard: [[
-          { text: '📆 Прогноз на 5 дней', callback_data: `forecast_${lat}_${lon}` }
+          { text: '📆 Прогноз на 7 дней', callback_data: `forecast_${lat}_${lon}` }
         ]]
       }
     });
