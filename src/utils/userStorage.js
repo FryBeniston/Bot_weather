@@ -1,7 +1,5 @@
-//userStorage.js
-
+// src/utils/userStorage.js
 const fs = require('fs');
-const path = require('path');
 
 const DB_PATH = '/tmp/userData.json';
 
@@ -38,10 +36,11 @@ function getHomeCity(userId) {
   return db[userId]?.homeCity || null;
 }
 
-function setDailyTime(userId, time) {
+function setDailyTimeWithTZ(userId, localTime, utcTime) {
   const db = readDB();
   if (!db[userId]) db[userId] = {};
-  db[userId].dailyTime = time;
+  db[userId].dailyLocalTime = localTime;
+  db[userId].dailyUtcTime = utcTime;
   writeDB(db);
 }
 
@@ -53,11 +52,11 @@ function getAllSubscribers() {
   const currentTime = `${currentHour}:${currentMinute}`;
 
   return Object.entries(db)
-    .filter(([id, user]) => user.dailyTime && user.homeCity)
+    .filter(([id, user]) => user.dailyUtcTime && user.homeCity)
     .map(([id, user]) => ({
       id,
       city: user.homeCity,
-      time: user.dailyTime
+      time: user.dailyUtcTime
     }))
     .filter(user => user.time === currentTime);
 }
@@ -65,6 +64,6 @@ function getAllSubscribers() {
 module.exports = {
   setHomeCity,
   getHomeCity,
-  setDailyTime,
+  setDailyTimeWithTZ,
   getAllSubscribers
 };

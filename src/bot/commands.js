@@ -1,5 +1,7 @@
-const { getHomeCity, setHomeCity, setDailyTime } = require('../utils/userStorage');
+// src/bot/commands.js
+const { getHomeCity, setHomeCity, setDailyTimeWithTZ } = require('../utils/userStorage');
 const { getWeatherByCity } = require('../services/weatherService');
+const { getWeatherByCoords } = require('../services/weatherService');
 const { formatWeatherResponse } = require('../utils/formatWeather');
 const { logEvent } = require('../utils/logger');
 
@@ -8,18 +10,19 @@ function setupCommands(bot) {
     ctx.reply('🌤 Привет! Выбери город, отправь геопозицию или используй команды:\n\n'
       + '• /sethome [город] — сохранить город\n'
       + '• /home — погода в сохранённом городе\n'
-      + '• /daily HH:mm — ежедневная рассылка (UTC)', {
+      + '• /daily HH:mm — ежедневная рассылка в местном времени', {
       reply_markup: {
         keyboard: [
-          ['Москва', 'Санкт-Петербург'],
-          ['Новосибирск', 'Екатеринбург'],
+          [{ text: '📍 Отправить геопозицию', request_location: true }]
+          ['Димитровград', 'Санкт-Петербург'],
+          ['Москва','Новосибирск'],
           ['Казань', 'Нижний Новгород'],
           ['Челябинск', 'Самара'],
-          ['Омск', 'Ростов-на-Дону'],
+          [ 'Ростов-на-Дону', 'Екатеринбург'],
           ['Уфа', 'Красноярск'],
           ['Воронеж', 'Пермь'],
-          ['Волгоград', 'Димитровград'],
-          [{ text: '📍 Отправить геопозицию', request_location: true }]
+          ['Волгоград','Омск'],
+         
         ],
         resize_keyboard: true,
         one_time_keyboard: false,
@@ -65,7 +68,7 @@ function setupCommands(bot) {
     const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
 
     if (!args || !timeRegex.test(args)) {
-      return ctx.reply('UsageId: /daily 8:00 или /daily 19:30\n(время в UTC)');
+      return ctx.reply('UsageId: /daily 8:00 или /daily 19:30\n(укажите местное время)');
     }
 
     const city = getHomeCity(ctx.from.id);
@@ -73,14 +76,30 @@ function setupCommands(bot) {
       return ctx.reply('❌ Сначала установите город: /sethome [город]');
     }
 
-    const [h, m] = args.split(':').map(part => part.padStart(2, '0'));
-    const formattedTime = `${h}:${m}`;
+    try {
+      const data = await getWeatherByCity(city, process.env.OPENWEATHER_API_KEY);
+      if (!data.timezone) {
+        throw new Error('Часовой пояс не доступен');
+      }
 
-    setDailyTime(ctx.from.id, formattedTime);
-    await ctx.reply(
-      `✅ Ежедневная рассылка в ${formattedTime} UTC включена для "${city}"!\n` +
-      `Для МСК (UTC+3) укажите время на 3 часа меньше.`
-    );
+      const [h, m] = args.split(':').map(Number);
+      const localDate = new Date();
+      localDate.setHours(h, m, 0, 0);
+
+      // Конвертация в UTC
+      const utcDate = new Date(localDate.getTime() - data.timezone * 1000);
+      const utcTime = `${String(utcDate.getUTCHours()).padStart(2, '0')}:${String(utcDate.getUTCMinutes()).padStart(2, '0')}`;
+
+      setDailyTimeWithTZ(ctx.from.id, args, utcTime);
+
+      await ctx.reply(
+        `✅ Рассылка в ${args} (местное время) включена для "${city}"!\n` +
+        `🕒 Это ${utcTime} UTC.`
+      );
+    } catch (err) {
+      console.error('Ошибка /daily:', err.message);
+      await ctx.reply('❌ Не удалось определить часовой пояс. Попробуйте другой город.');
+    }
   });
 }
 
