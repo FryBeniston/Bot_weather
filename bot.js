@@ -27,14 +27,12 @@ if (!fs.existsSync(DB_PATH)) {
 const bot = new Telegraf(TELEGRAM_TOKEN);
 bot.use(new LocalSession({ database: SESSION_PATH }).middleware());
 
-// Подключаем команды
 const { setupCommands } = require('./src/bot/commands');
 setupCommands(bot);
 
-// Обработчики (в том числе текст без команд)
 const { handleTextMessage, handleLocation, handleForecastCallback } = require('./src/bot/handlers');
 
-bot.on('text', handleTextMessage); // ← игнорирует команды внутри самой функции
+bot.on('text', handleTextMessage);
 bot.on('location', handleLocation);
 bot.action(/forecast_(.+?)_(.+)/, handleForecastCallback);
 
@@ -42,7 +40,6 @@ bot.catch((err) => {
   console.error('⚠️ Telegraf error:', err.message);
 });
 
-// Express сервер
 const PORT = process.env.PORT || 3000;
 const app = express();
 app.use(express.json());

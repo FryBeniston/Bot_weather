@@ -4,14 +4,28 @@ const { getWeatherByCity } = require('../services/weatherService');
 const { formatWeatherResponse } = require('../utils/formatWeather');
 const { logEvent } = require('../utils/logger');
 
+async function handleHomeWeather(ctx) {
+  const city = getHomeCity(ctx.from.id);
+  if (!city) {
+    return ctx.reply('❌ Сначала сохраните город: /sethome');
+  }
+
+  try {
+    const data = await getWeatherByCity(city, process.env.OPENWEATHER_API_KEY);
+    const text = formatWeatherResponse(data);
+    await ctx.reply(text);
+  } catch (err) {
+    console.error('Ошибка погоды дома:', err.message);
+    await ctx.reply('❌ Не удалось загрузить погоду.');
+  }
+}
+
 function setupCommands(bot) {
   bot.start((ctx) => {
-    ctx.reply('🌤 Привет! Выбери город, отправь геопозицию или используй команды:\n\n'
-      + '• /sethome — сохранить домашний город\n'
-      + '• /home — погода в домашнем городе\n'
-      + '• /daily HH:mm — рассылка в местном времени', {
+    ctx.reply('🌤 Привет! Выберите действие или город:', {
       reply_markup: {
         keyboard: [
+          ['🌤 Погода дома'],
           [{ text: '📍 Отправить геопозицию', request_location: true }],
           ['Москва', 'Санкт-Петербург'],
           ['Новосибирск', 'Екатеринбург'],
@@ -28,25 +42,15 @@ function setupCommands(bot) {
     });
   });
 
+
+  bot.hears('🌤 Погода дома', handleHomeWeather);
+
   bot.command('sethome', (ctx) => {
     ctx.session.awaitingHomeCity = true;
     return ctx.reply('🏙 Введите название города (например, Москва):');
   });
 
-  bot.command('home', async (ctx) => {
-    const city = getHomeCity(ctx.from.id);
-    if (!city) {
-      return ctx.reply('❌ У вас нет сохранённого города. Используйте /sethome');
-    }
-    try {
-      const data = await getWeatherByCity(city, process.env.OPENWEATHER_API_KEY);
-      const text = formatWeatherResponse(data);
-      await ctx.reply(text);
-    } catch (err) {
-      logEvent(`❌ Ошибка /home для ${ctx.from.id}: ${err.message}`);
-      await ctx.reply('❌ Не удалось загрузить погоду.');
-    }
-  });
+  bot.command('home', handleHomeWeather);
 
   bot.command('daily', async (ctx) => {
     const args = ctx.message.text.split(' ').slice(1).join(' ').trim();
